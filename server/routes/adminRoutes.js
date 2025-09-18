@@ -452,7 +452,7 @@ router.post('/pumpfun/claim-and-send', async (req, res) => {
   try {
     const { winnerAddress } = req.body;
     const tokenMintAddress = process.env.TOKEN_MINT_ADDRESS;
-    
+
     if (!tokenMintAddress) {
       return res.status(400).json({
         success: false,
@@ -468,9 +468,9 @@ router.post('/pumpfun/claim-and-send', async (req, res) => {
     }
 
     const result = await pumpfunService.claimAndSendToWinner(tokenMintAddress, winnerAddress);
-    
+
     logger.info(`Admin claimed fees and sent to winner: ${winnerAddress}`);
-    
+
     res.json({
       success: true,
       message: 'Fees claimed and sent to winner successfully',
@@ -478,6 +478,72 @@ router.post('/pumpfun/claim-and-send', async (req, res) => {
     });
   } catch (error) {
     logger.error('Failed to claim and send fees:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Initialize game timer after token creation
+router.post('/initialize-game', async (req, res) => {
+  try {
+    const { tokenMintAddress } = req.body;
+
+    // Validate required parameters
+    if (!tokenMintAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token mint address is required'
+      });
+    }
+
+    // Update token mint address
+    process.env.TOKEN_MINT_ADDRESS = tokenMintAddress;
+
+    // Re-initialize services with new token
+    try {
+      await solanaService.initialize();
+      logger.info('Solana service re-initialized with new token');
+    } catch (error) {
+      logger.warn('Solana service re-initialization failed:', error.message);
+    }
+
+    try {
+      await pumpfunService.initialize();
+      logger.info('Pump.fun service re-initialized');
+    } catch (error) {
+      logger.warn('Pump.fun service re-initialization failed:', error.message);
+    }
+
+    // Update holder tracker with new token
+    try {
+      await holderTracker.updateTokenAddress(tokenMintAddress);
+      logger.info('Holder tracker updated with new token address');
+    } catch (error) {
+      logger.warn('Holder tracker update failed:', error.message);
+    }
+
+    // Start game timer if not already running
+    if (!gameEngine.isRunning) {
+      gameEngine.startGameCycle();
+      logger.info('Game timer started');
+    }
+
+    logger.info(`Game initialized with token: ${tokenMintAddress}`);
+
+    res.json({
+      success: true,
+      message: 'Game initialized successfully',
+      data: {
+        tokenMintAddress,
+        gameStarted: true,
+        autoFeeClaiming: process.env.AUTO_CLAIM_PUMPFUN_FEES === 'true',
+        feePayoutPercentage: process.env.FEE_PAYOUT_PERCENTAGE
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to initialize game:', error);
     res.status(500).json({
       success: false,
       error: error.message

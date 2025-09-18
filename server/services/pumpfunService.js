@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, Keypair } = require('@solana/web3.js');
 const { getAssociatedTokenAddress, createTransferInstruction } = require('@solana/spl-token');
 const logger = require('../utils/logger');
 const solanaService = require('./solanaService');
@@ -120,7 +120,8 @@ class PumpFunService {
         const response = await axios.post(url, {
           action: "collectCreatorFee",
           priorityFee: 0.000001,
-          pool: "pump"
+          pool: "pump",
+          mint: tokenMintAddress
         });
 
         if (response.data && response.data.signature) {
@@ -159,24 +160,53 @@ class PumpFunService {
         throw new Error('Creator wallet, fee collection wallet, or hot wallet not configured');
       }
 
-      // Check if fee collection wallet has WSOL balance
-      const wsolMint = 'So11111111111111111111111111111111111111112';
-      const feeBalance = await solanaService.getTokenBalanceForWallet(feeCollectionWallet, wsolMint);
 
-      if (feeBalance <= 0) {
-        logger.info('No fees available in fee collection wallet');
-        return 'no_fees_available_' + Date.now();
+      // Get creator wallet SOL balance
+      const creatorBalance = await this.connection.getBalance(new PublicKey(creatorWallet));
+
+      if (creatorBalance <= 0) {
+        logger.info('No SOL available in creator wallet');
+        return 'no_sol_available_' + Date.now();
       }
 
-      // Transfer WSOL from fee collection wallet to creator wallet
-      logger.info(`Transferring ${feeBalance} lamports WSOL from fee collection wallet to creator wallet`);
+      // Calculate 50% to send to winner (leave some for transaction fees)
+      const amountToSend = Math.floor(creatorBalance * 0.5);
+      const minBalance = 1000000; // Keep at least 0.001 SOL for fees
 
-      // For now, since we don't have direct access to fee collection wallet private key,
-      // we'll simulate the transfer. In production, you'd need the private key.
-      const mockSignature = 'fee_transfer_' + Date.now() + '_' + feeBalance;
+      if (amountToSend <= minBalance) {
+        logger.info('Creator wallet balance too low to send 50%');
+        return 'insufficient_balance_' + Date.now();
+      }
 
-      logger.info(`Fee transfer completed: ${mockSignature}`);
-      return mockSignature;
+      logger.info(`Sending ${amountToSend} lamports (${amountToSend / LAMPORTS_PER_SOL} SOL) from creator wallet to winner`);
+
+      // Use creator wallet to send to winner
+      const creatorWalletPrivateKey = JSON.parse(process.env.CREATOR_WALLET_PRIVATE_KEY);
+      const creatorKeypair = Keypair.fromSecretKey(new Uint8Array(creatorWalletPrivateKey));
+
+      // Create transaction to send SOL to winner
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: creatorKeypair.publicKey,
+          toPubkey: new PublicKey(winnerAddress),
+          lamports: amountToSend
+        })
+      );
+
+      // Get recent blockhash
+      const { blockhash } = await this.connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = creatorKeypair.publicKey;
+
+      // Sign and send transaction
+      transaction.sign(creatorKeypair);
+      const signature = await this.connection.sendRawTransaction(transaction.serialize());
+
+      // Confirm transaction
+      await this.connection.confirmTransaction(signature, 'confirmed');
+
+      logger.info(`Successfully sent ${amountToSend / LAMPORTS_PER_SOL} SOL to winner ${winnerAddress}: ${signature}`);
+      return signature;
 
     } catch (error) {
       logger.error('Failed to claim fees directly:', error);
@@ -196,13 +226,14 @@ class PumpFunService {
         await this.initialize();
       }
 
-      const hotWalletPrivateKey = JSON.parse(process.env.HOT_WALLET_PRIVATE_KEY);
-      const hotWallet = solanaService.getKeypairFromPrivateKey(hotWalletPrivateKey);
-      
+      // Use creator wallet for fee distribution
+      const creatorWalletPrivateKey = JSON.parse(process.env.CREATOR_WALLET_PRIVATE_KEY);
+      const creatorWallet = Keypair.fromSecretKey(new Uint8Array(creatorWalletPrivateKey));
+
       // Create transaction to send SOL to winner
       const transaction = new Transaction().add(
         SystemProgram.transfer({
-          fromPubkey: hotWallet.publicKey,
+          fromPubkey: creatorWallet.publicKey,
           toPubkey: new PublicKey(winnerAddress),
           lamports: amount
         })
@@ -211,19 +242,19 @@ class PumpFunService {
       // Get recent blockhash
       const { blockhash } = await this.connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
-      transaction.feePayer = hotWallet.publicKey;
+      transaction.feePayer = creatorWallet.publicKey;
 
       // Sign and send transaction
-      transaction.sign(hotWallet);
+      transaction.sign(creatorWallet);
       const signature = await this.connection.sendRawTransaction(transaction.serialize());
-      
+
       // Confirm transaction
       await this.connection.confirmTransaction(signature, 'confirmed');
-      
-      logger.info(`Sent ${amount / LAMPORTS_PER_SOL} SOL to winner ${winnerAddress}: ${signature}`);
-      
+
+      logger.info(`Sent ${amount / LAMPORTS_PER_SOL} SOL (${amount} lamports) from creator wallet to winner ${winnerAddress}: ${signature}`);
+
       return signature;
-      
+
     } catch (error) {
       logger.error('Failed to send fees to winner:', error);
       throw error;

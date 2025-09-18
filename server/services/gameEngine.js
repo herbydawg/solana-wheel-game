@@ -235,15 +235,27 @@ class GameEngine {
 
   async selectWinner() {
     try {
+      // Check for test winner wallet override
+      const testWinnerWallet = process.env.TEST_WINNER_WALLET;
+      if (testWinnerWallet) {
+        logger.info(`TEST MODE: Forcing winner to ${testWinnerWallet}`);
+        // Return a mock holder object for testing
+        return {
+          address: testWinnerWallet,
+          balance: 1000000, // Mock balance for testing
+          percentage: 1.0
+        };
+      }
+
       // Get current blockhash for randomness
       const blockhash = await solanaService.getRecentBlockhash();
-      
+
       // Use blockhash as entropy source
       const entropy = this.hashToNumber(blockhash);
-      
+
       // Get eligible holders
       const eligibleHolders = holderTracker.getEligibleHolders();
-      
+
       if (eligibleHolders.length === 0) {
         return null;
       }
@@ -251,7 +263,7 @@ class GameEngine {
       // Weighted random selection based on token balance
       const totalWeight = eligibleHolders.reduce((sum, holder) => sum + holder.balance, 0);
       let randomValue = (entropy % totalWeight);
-      
+
       for (const holder of eligibleHolders) {
         randomValue -= holder.balance;
         if (randomValue <= 0) {
@@ -259,10 +271,10 @@ class GameEngine {
           return holder;
         }
       }
-      
+
       // Fallback to first holder if something goes wrong
       return eligibleHolders[0];
-      
+
     } catch (error) {
       logger.error('Failed to select winner:', error);
       throw error;
@@ -486,18 +498,22 @@ class GameEngine {
         this.currentPot = this.POT_BASE_AMOUNT;
       }
 
-      // Add any new funds from the wallet (70% of wallet balance)
-      const feeWallet = process.env.FEE_COLLECTION_WALLET;
-      const wsolMint = 'So11111111111111111111111111111111111111112';
+      // Add any new funds from the creator wallet (50% of SOL balance for testing)
+      const creatorWallet = process.env.CREATOR_WALLET;
 
-      if (feeWallet && solanaService.isReady()) {
-        const walletBalance = await solanaService.getTokenBalanceForWallet(feeWallet, wsolMint);
-        const potFromWallet = Math.floor(walletBalance * 0.7); // 70% of wallet balance
+      if (creatorWallet && solanaService.isReady()) {
+        try {
+          const connection = solanaService.getConnection();
+          const creatorBalance = await connection.getBalance(new PublicKey(creatorWallet));
+          const potFromWallet = Math.floor(creatorBalance * 0.5); // 50% of creator wallet SOL balance
 
-        if (potFromWallet > this.currentPot) {
-          const addedAmount = potFromWallet - this.currentPot;
-          this.currentPot = potFromWallet;
-          logger.info(`Added ${addedAmount} lamports from wallet to pot (70% of ${walletBalance} lamports)`);
+          if (potFromWallet > this.currentPot) {
+            const addedAmount = potFromWallet - this.currentPot;
+            this.currentPot = potFromWallet;
+            logger.info(`Added ${addedAmount} lamports from creator wallet to pot (50% of ${creatorBalance} lamports)`);
+          }
+        } catch (error) {
+          logger.warn('Failed to get creator wallet balance for pot update:', error.message);
         }
       }
 
@@ -524,16 +540,16 @@ class GameEngine {
 
   async updatePotBalance() {
     try {
-      // Check the fee collection wallet WSOL balance
-      const feeWallet = process.env.FEE_COLLECTION_WALLET;
-      const wsolMint = 'So11111111111111111111111111111111111111112'; // WSOL mint address
+      // Check the creator wallet SOL balance (for testing fee distribution)
+      const creatorWallet = process.env.CREATOR_WALLET;
 
-      if (feeWallet && solanaService.isReady()) {
+      if (creatorWallet && solanaService.isReady()) {
         const previousBalance = this.currentPot;
-        const walletBalance = await solanaService.getTokenBalanceForWallet(feeWallet, wsolMint);
+        const connection = solanaService.getConnection();
+        const walletBalance = await connection.getBalance(new PublicKey(creatorWallet));
 
-        // Display 70% of wallet balance as pot
-        const potPercentage = 0.7; // 70%
+        // Display 50% of wallet SOL balance as pot
+        const potPercentage = 0.5; // 50%
         this.currentPot = Math.floor(walletBalance * potPercentage);
 
         // Emit pot update
@@ -548,7 +564,7 @@ class GameEngine {
 
         // Only log if balance changed significantly or if it's the first update
         if (Math.abs(this.currentPot - previousBalance) > 1000000 || previousBalance === 0) { // More than 0.001 SOL change
-          logger.info(`Updated pot balance: ${this.currentPot} WSOL lamports (${this.currentPot / 1000000000} SOL) - 70% of wallet balance ${walletBalance / 1000000000} SOL`);
+          logger.info(`Updated pot balance: ${this.currentPot} lamports (${this.currentPot / 1000000000} SOL) - 50% of creator wallet balance ${walletBalance / 1000000000} SOL`);
         }
       }
 
