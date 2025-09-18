@@ -207,7 +207,7 @@ const PumpFunPanel = ({ adminPassword }) => {
             <div>
               <div className="text-white font-bold">Auto-Claim on Win</div>
               <div className="text-gray-400 text-sm">
-                Automatically claim and send fees when someone wins
+                Claim fees to creator wallet, then send % to winner
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -222,8 +222,58 @@ const PumpFunPanel = ({ adminPassword }) => {
           </div>
           
           <div className="text-yellow-400 text-xs">
-            ⚠️ When enabled, fees will be automatically claimed and sent to winners after each spin
+            ⚠️ Process: Claim fees → Creator wallet → Send % to winner (pot stays same)
           </div>
+        </div>
+      </div>
+
+      {/* Test Fee Claiming */}
+      <div className="glass-strong p-6 rounded-xl">
+        <h4 className="text-lg font-bold text-white mb-4">🧪 Test Fee System</h4>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <button
+            onClick={async () => {
+              try {
+                const response = await axios.get(`${API_BASE}/admin/pumpfun/fees`, {
+                  headers: { 'x-admin-password': adminPassword }
+                });
+                console.log('Fee API Test:', response.data);
+                toast.success('Fee API working correctly!');
+              } catch (error) {
+                console.error('Fee API Test Failed:', error);
+                toast.error('Fee API test failed');
+              }
+            }}
+            className="btn-neon py-2"
+          >
+            🔍 Test Fee API
+          </button>
+          
+          <button
+            onClick={async () => {
+              try {
+                const testAddress = 'So11111111111111111111111111111111111111112'; // Test with WSOL address
+                const response = await axios.post(`${API_BASE}/admin/pumpfun/claim-and-send`, {
+                  winnerAddress: testAddress
+                }, {
+                  headers: { 'x-admin-password': adminPassword }
+                });
+                console.log('Claim Test:', response.data);
+                toast.success('Claim test completed!');
+              } catch (error) {
+                console.error('Claim Test Failed:', error);
+                toast.error('Claim test failed - check console');
+              }
+            }}
+            className="btn-neon py-2"
+          >
+            🧪 Test Claim Flow
+          </button>
+        </div>
+        
+        <div className="text-gray-400 text-xs mt-2 text-center">
+          Use these buttons to test the fee claiming system
         </div>
       </div>
 

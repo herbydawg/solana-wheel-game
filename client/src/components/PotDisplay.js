@@ -13,6 +13,7 @@ const PotDisplay = ({ amount }) => {
   const [lastGrowth, setLastGrowth] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
   const [potPercentage, setPotPercentage] = useState(0.7);
+  const [potGrowthHistory, setPotGrowthHistory] = useState([]);
 
   useEffect(() => {
     if (amount > previousAmount && previousAmount > 0) {
@@ -41,10 +42,28 @@ const PotDisplay = ({ amount }) => {
       }
     };
 
+    const handlePotGrowthUpdate = (data) => {
+      const growthPercentage = data.growthPercentage || 0;
+      setGrowthRate(growthPercentage);
+      setLastGrowth(data.growthAmount || 0);
+      
+      // Add to growth history for persistent display
+      setPotGrowthHistory(prev => {
+        const newHistory = [{
+          percentage: growthPercentage,
+          amount: data.growthAmount,
+          timestamp: data.timestamp
+        }, ...prev];
+        return newHistory.slice(0, 7); // Keep last 7 growth events
+      });
+    };
+
     socket.on('potUpdate', handlePotUpdate);
+    socket.on('potGrowthUpdate', handlePotGrowthUpdate);
 
     return () => {
       socket.off('potUpdate', handlePotUpdate);
+      socket.off('potGrowthUpdate', handlePotGrowthUpdate);
     };
   }, [socket]);
 
@@ -96,7 +115,7 @@ const PotDisplay = ({ amount }) => {
             <div>Updated in real-time</div>
             {walletBalance > 0 && (
               <div className="text-gray-400">
-                Wallet: {(walletBalance / 1000000000).toFixed(4)} SOL • Display: {(potPercentage * 100).toFixed(0)}%
+                Fee Wallet: {(walletBalance / 1000000000).toFixed(4)} SOL • Pot: {(potPercentage * 100).toFixed(0)}%
               </div>
             )}
           </div>
@@ -136,25 +155,37 @@ const PotDisplay = ({ amount }) => {
 
         {/* Dynamic growth visualization bars */}
         <div className="flex items-end justify-between h-8 gap-1">
-          {[0.2, 0.4, 0.3, 0.6, 0.5, 0.7, Math.max(0.1, growthRate / 100)].map((height, index) => (
-            <motion.div
-              key={index}
-              initial={{ height: 0 }}
-              animate={{ height: `${Math.max(5, height * 100)}%` }}
-              transition={{ delay: index * 0.1, duration: 0.5 }}
-              className={`rounded-sm flex-1 min-h-[4px] ${
-                index === 6
-                  ? 'bg-gradient-to-t from-green-500 to-emerald-400'
-                  : 'bg-gradient-to-t from-blue-500 to-purple-500'
-              }`}
+          {potGrowthHistory.slice(0, 7).map((growth, index) => {
+            const height = Math.max(0.1, Math.abs(growth.percentage) / 10); // Scale percentage for display
+            return (
+              <motion.div
+                key={index}
+                initial={{ height: 0 }}
+                animate={{ height: `${Math.max(5, height * 100)}%` }}
+                transition={{ delay: index * 0.1, duration: 0.5 }}
+                className={`rounded-sm flex-1 min-h-[4px] ${
+                  growth.percentage >= 0
+                    ? 'bg-gradient-to-t from-green-500 to-emerald-400'
+                    : 'bg-gradient-to-t from-red-500 to-red-400'
+                }`}
+                title={`${growth.percentage.toFixed(1)}% growth`}
+              />
+            );
+          })}
+          
+          {/* Fill remaining bars if less than 7 growth events */}
+          {Array.from({ length: Math.max(0, 7 - potGrowthHistory.length) }, (_, index) => (
+            <div
+              key={`empty-${index}`}
+              className="rounded-sm flex-1 min-h-[4px] bg-gray-600/30"
             />
           ))}
         </div>
 
         <div className="flex justify-between mt-1">
-          <span className="text-xs text-gray-500">Last cycle</span>
-          <span className="text-xs text-gray-500">
-            +{formatSOL(lastGrowth)} SOL
+          <span className="text-xs text-gray-500">Growth History</span>
+          <span className={`text-xs ${growthRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {growthRate >= 0 ? '+' : ''}{growthRate.toFixed(1)}%
           </span>
         </div>
       </motion.div>

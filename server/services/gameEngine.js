@@ -369,26 +369,41 @@ class GameEngine {
         this.gameHistory = this.gameHistory.slice(0, 50);
       }
 
-      // Check if auto-claim is enabled and try to claim Pump.fun fees
+      // Check if auto-claim is enabled and claim Pump.fun fees to creator wallet
       try {
         const autoClaimEnabled = process.env.AUTO_CLAIM_PUMPFUN_FEES === 'true';
         if (autoClaimEnabled) {
-          logger.info('Auto-claiming Pump.fun fees for winner...');
-          const claimResult = await pumpfunService.claimAndSendToWinner(
-            process.env.TOKEN_MINT_ADDRESS,
-            this.currentGame.winner.address
-          );
+          logger.info('Auto-claiming Pump.fun fees to creator wallet...');
           
-          logger.info('Pump.fun fees auto-claimed and sent to winner:', claimResult);
+          // Step 1: Claim fees from Pump.fun to creator wallet
+          const claimSignature = await pumpfunService.claimCreatorFees(process.env.TOKEN_MINT_ADDRESS);
+          logger.info('Pump.fun fees claimed to creator wallet:', claimSignature);
           
-          // Emit additional payout notification
-          this.io.emit('pumpfunFeesClaimedForWinner', {
-            gameId: this.currentGame.id,
-            winner: this.currentGame.winner.address,
-            claimAmount: claimResult.amount,
-            claimSignature: claimResult.claimSignature,
-            sendSignature: claimResult.sendSignature
-          });
+          // Step 2: Get the claimed amount and send percentage to winner
+          const feeStats = await pumpfunService.getFeeClaimingStats();
+          const feePayoutPercentage = parseFloat(process.env.FEE_PAYOUT_PERCENTAGE) || 50; // Default 50%
+          const feePayoutAmount = Math.floor(feeStats.claimableFees * (feePayoutPercentage / 100));
+          
+          if (feePayoutAmount > 0) {
+            // Step 3: Send percentage of claimed fees to winner
+            const sendSignature = await pumpfunService.sendFeesToWinner(
+              this.currentGame.winner.address,
+              feePayoutAmount
+            );
+            
+            logger.info(`Sent ${feePayoutAmount} lamports (${feePayoutPercentage}% of fees) to winner: ${sendSignature}`);
+            
+            // Emit fee payout notification
+            this.io.emit('pumpfunFeesClaimedAndSent', {
+              gameId: this.currentGame.id,
+              winner: this.currentGame.winner.address,
+              totalClaimed: feeStats.claimableFees,
+              sentToWinner: feePayoutAmount,
+              feePayoutPercentage: feePayoutPercentage,
+              claimSignature: claimSignature,
+              sendSignature: sendSignature
+            });
+          }
         }
       } catch (pumpfunError) {
         logger.warn('Failed to auto-claim Pump.fun fees:', pumpfunError.message);
@@ -405,8 +420,23 @@ class GameEngine {
         simulated: transactionSignature.startsWith('simulated_')
       });
 
+      // Calculate pot growth percentage for display
+      const previousPot = this.currentPot;
+      
       // Apply pot growth for next cycle
       await this.applyPotGrowth();
+      
+      // Calculate and emit pot growth percentage
+      const potGrowthPercentage = previousPot > 0 ?
+        ((this.currentPot - previousPot) / previousPot) * 100 : 0;
+
+      this.io.emit('potGrowthUpdate', {
+        previousPot: previousPot,
+        newPot: this.currentPot,
+        growthAmount: this.currentPot - previousPot,
+        growthPercentage: potGrowthPercentage,
+        timestamp: new Date()
+      });
 
       this.gameState = 'waiting';
       this.calculateNextSpinTime();

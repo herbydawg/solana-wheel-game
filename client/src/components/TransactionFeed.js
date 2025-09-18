@@ -4,14 +4,53 @@ import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
 
 const TransactionFeed = () => {
-  const { recentTransactions } = useSocket();
+  const { recentTransactions, socket } = useSocket();
   const { fetchPayoutHistory, formatAddress, formatSOL } = useGame();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [winners, setWinners] = useState([]);
 
   useEffect(() => {
     loadTransactionHistory();
   }, []);
+
+  // Listen for winner events to maintain persistent winner list
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleWinnerSelected = (data) => {
+      const newWinner = {
+        id: data.gameId,
+        winner: data.winner.address,
+        amount: data.winnerPayout,
+        timestamp: new Date(),
+        signature: null // Will be updated when payout completes
+      };
+      
+      setWinners(prev => {
+        const updated = [newWinner, ...prev.filter(w => w.id !== data.gameId)];
+        return updated.slice(0, 5); // Keep last 5 winners
+      });
+    };
+
+    const handlePayoutCompleted = (data) => {
+      setWinners(prev =>
+        prev.map(winner =>
+          winner.id === data.gameId
+            ? { ...winner, signature: data.transactionSignature }
+            : winner
+        )
+      );
+    };
+
+    socket.on('winnerSelected', handleWinnerSelected);
+    socket.on('payoutCompleted', handlePayoutCompleted);
+
+    return () => {
+      socket.off('winnerSelected', handleWinnerSelected);
+      socket.off('payoutCompleted', handlePayoutCompleted);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (recentTransactions && recentTransactions.length > 0) {
@@ -128,61 +167,62 @@ const TransactionFeed = () => {
 
       <div className="space-y-3 overflow-y-auto max-h-[500px] pr-2 custom-scrollbar">
         <AnimatePresence>
-          {transactions.length === 0 ? (
+          {winners.length === 0 ? (
             <div className="text-center text-gray-400 py-8">
-              <div className="text-4xl mb-2">🔄</div>
-              <div>No transactions yet</div>
-              <div className="text-xs mt-1">Waiting for game activity...</div>
+              <div className="text-4xl mb-2">🎰</div>
+              <div>No winners yet</div>
+              <div className="text-xs mt-1">Waiting for first spin...</div>
             </div>
           ) : (
-            transactions.map((tx, index) => (
+            winners.map((winner, index) => (
               <motion.div
-                key={tx.id || index}
+                key={winner.id || index}
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ delay: index * 0.05 }}
-                className="transaction-item cursor-pointer hover:bg-white/10 transition-colors"
-                onClick={() => openTransaction(tx.signature)}
+                className="transaction-item cursor-pointer hover:bg-white/10 transition-colors p-3 glass rounded-lg"
+                onClick={() => winner.signature && openTransaction(winner.signature)}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start space-x-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
                     <div className="text-lg">
-                      {getTransactionIcon(tx.type, tx.status)}
+                      🏆
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
-                        <span className={`text-sm font-medium ${getTransactionColor(tx.type, tx.status)}`}>
-                          {tx.type === 'payout' ? 'Winner Payout' : 
-                           tx.type === 'spin' ? 'Wheel Spin' : 
-                           'Transaction'}
+                        <span className="text-sm font-medium text-green-400">
+                          Winner #{index + 1}
                         </span>
-                        {tx.status === 'failed' && (
-                          <span className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
-                            Failed
+                        {!winner.signature && (
+                          <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">
+                            Processing
                           </span>
                         )}
                       </div>
                       
-                      {tx.winner && (
-                        <div className="text-xs text-gray-300 mb-1">
-                          Winner: {formatAddress(tx.winner)}
-                        </div>
-                      )}
+                      <div className="text-xs text-gray-300 mb-1">
+                        <a
+                          href={`https://solscan.io/account/${winner.winner}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-blue-400 transition-colors underline decoration-transparent hover:decoration-blue-400"
+                        >
+                          {formatAddress(winner.winner)}
+                        </a>
+                      </div>
                       
-                      {tx.amount && (
-                        <div className="text-xs text-white font-mono">
-                          {formatSOL(tx.amount)} SOL
-                        </div>
-                      )}
+                      <div className="text-xs text-white font-mono font-bold">
+                        {formatSOL(winner.amount)} SOL
+                      </div>
                       
                       <div className="text-xs text-gray-500 mt-1">
-                        {formatTimeAgo(tx.timestamp)}
+                        {formatTimeAgo(winner.timestamp)}
                       </div>
                     </div>
                   </div>
                   
-                  {tx.signature && (
+                  {winner.signature && (
                     <div className="text-xs text-gray-400 hover:text-white transition-colors">
                       🔗
                     </div>
