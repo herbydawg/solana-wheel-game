@@ -1,0 +1,23 @@
+{
+  "watch": ["server"],
+  "ext": "js,json",
+  "ignore": [
+    "logs/**/*",
+    "logs/*",
+    "logs",
+    "node_modules/**/*",
+    "*.log",
+    ".env",
+    "client/**/*",
+    "client/*",
+    "**/*.log",
+    "**/logs/**",
+    "**/logs/*"
+  ],
+  "ignoreRoot": [
+    "logs"
+  ],
+  "delay": 5000,
+  "restartable": "rs",
+  "verbose": false
+}

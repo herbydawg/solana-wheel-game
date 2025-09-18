@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # Redis for caching and real-time data
+  redis:
+    image: redis:7-alpine
+    container_name: solana-wheel-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - solana-wheel-network
+
+  # PostgreSQL for persistent data
+  postgres:
+    image: postgres:15-alpine
+    container_name: solana-wheel-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: solana_wheel_game
+      POSTGRES_USER: solana_wheel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - solana-wheel-network
+
+  # Backend API Server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: solana-wheel-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      REDIS_URL: redis://redis:6379
+      POSTGRES_URL: postgresql://solana_wheel:${POSTGRES_PASSWORD:-secure_password_change_me}@postgres:5432/solana_wheel_game
+      CLIENT_URL: ${CLIENT_URL}
+      REACT_APP_API_URL: ${REACT_APP_API_URL}
+      REACT_APP_SERVER_URL: ${REACT_APP_SERVER_URL}
+      
+      # Solana Configuration
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL}
+      SOLANA_RPC_BACKUP_1: ${SOLANA_RPC_BACKUP_1}
+      SOLANA_RPC_BACKUP_2: ${SOLANA_RPC_BACKUP_2}
+      TOKEN_MINT_ADDRESS: ${TOKEN_MINT_ADDRESS}
+      
+      # Wallet Configuration
+      HOT_WALLET_PRIVATE_KEY: ${HOT_WALLET_PRIVATE_KEY}
+      FEE_COLLECTION_WALLET: ${FEE_COLLECTION_WALLET}
+      CREATOR_WALLET: ${CREATOR_WALLET}
+      
+      # Game Configuration
+      SPIN_INTERVAL_MINUTES: ${SPIN_INTERVAL_MINUTES:-5}
+      MINIMUM_HOLD_PERCENTAGE: ${MINIMUM_HOLD_PERCENTAGE:-0.1}
+      WINNER_PAYOUT_PERCENTAGE: ${WINNER_PAYOUT_PERCENTAGE:-50}
+      CREATOR_PAYOUT_PERCENTAGE: ${CREATOR_PAYOUT_PERCENTAGE:-50}
+      
+      # Security
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - solana-wheel-network
+
+  # Frontend (for development - use CDN in production)
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:5000/api}
+        REACT_APP_SERVER_URL: ${REACT_APP_SERVER_URL:-http://localhost:5000}
+    container_name: solana-wheel-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:5000/api}
+      REACT_APP_SERVER_URL: ${REACT_APP_SERVER_URL:-http://localhost:5000}
+    depends_on:
+      - backend
+    networks:
+      - solana-wheel-network
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: solana-wheel-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - solana-wheel-network
+
+volumes:
+  redis_data:
+  postgres_data:
+
+networks:
+  solana-wheel-network:
+    driver: bridge
