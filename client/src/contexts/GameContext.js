@@ -288,9 +288,11 @@ export const GameProvider = ({ children }) => {
         return price;
       }
     } catch (error) {
-      console.warn('Failed to fetch SOL price, using fallback:', error.message);
+      console.warn('Failed to fetch SOL price from CoinGecko, using fallback:', error.message);
+      // Don't fail the entire app if CoinGecko is down
+      dispatch({ type: 'SET_SOL_PRICE', payload: state.solPrice || 180 });
     }
-    return state.solPrice; // Return current price as fallback
+    return state.solPrice || 180; // Return fallback price
   };
 
   // Initialize data on mount
