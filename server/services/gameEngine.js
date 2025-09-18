@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const solanaService = require('./solanaService');
 const holderTracker = require('./holderTracker');
 const payoutService = require('./payoutService');
+const pumpfunService = require('./pumpfunService');
 const logger = require('../utils/logger');
 const db = require('../database/connection');
 const { GameModel, TransactionModel, GameStatsModel, SystemSettingsModel } = require('../database/models');
@@ -366,6 +367,32 @@ class GameEngine {
       // Keep only last 50 games in memory
       if (this.gameHistory.length > 50) {
         this.gameHistory = this.gameHistory.slice(0, 50);
+      }
+
+      // Check if auto-claim is enabled and try to claim Pump.fun fees
+      try {
+        const autoClaimEnabled = process.env.AUTO_CLAIM_PUMPFUN_FEES === 'true';
+        if (autoClaimEnabled) {
+          logger.info('Auto-claiming Pump.fun fees for winner...');
+          const claimResult = await pumpfunService.claimAndSendToWinner(
+            process.env.TOKEN_MINT_ADDRESS,
+            this.currentGame.winner.address
+          );
+          
+          logger.info('Pump.fun fees auto-claimed and sent to winner:', claimResult);
+          
+          // Emit additional payout notification
+          this.io.emit('pumpfunFeesClaimedForWinner', {
+            gameId: this.currentGame.id,
+            winner: this.currentGame.winner.address,
+            claimAmount: claimResult.amount,
+            claimSignature: claimResult.claimSignature,
+            sendSignature: claimResult.sendSignature
+          });
+        }
+      } catch (pumpfunError) {
+        logger.warn('Failed to auto-claim Pump.fun fees:', pumpfunError.message);
+        // Don't fail the entire payout process if Pump.fun claiming fails
       }
 
       // Emit payout confirmation

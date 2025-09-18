@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import GameConfigPanel from './GameConfigPanel';
+import PumpFunPanel from './PumpFunPanel';
 
 const AdminDashboard = () => {
   const [adminPassword, setAdminPassword] = useState('');
@@ -169,6 +170,12 @@ const AdminDashboard = () => {
         <div className="glass-strong p-6 rounded-2xl mb-8">
           <h3 className="text-xl font-bold text-white mb-4">🎮 Game Configuration</h3>
           <GameConfigPanel adminPassword={adminPassword} />
+        </div>
+
+        {/* Pump.fun Fee Management */}
+        <div className="glass-strong p-6 rounded-2xl mb-8">
+          <h3 className="text-xl font-bold text-white mb-4">🚀 Pump.fun Fee Management</h3>
+          <PumpFunPanel adminPassword={adminPassword} />
         </div>
 
         {/* System Status */}

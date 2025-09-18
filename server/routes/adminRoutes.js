@@ -4,6 +4,7 @@ const gameEngine = require('../services/gameEngine');
 const holderTracker = require('../services/holderTracker');
 const payoutService = require('../services/payoutService');
 const solanaService = require('../services/solanaService');
+const pumpfunService = require('../services/pumpfunService');
 const logger = require('../utils/logger');
 
 // Simple admin authentication middleware (in production, use proper JWT)
@@ -392,6 +393,91 @@ router.post('/test-connection', async (req, res) => {
     });
   } catch (error) {
     logger.error('Solana connection test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get Pump.fun fee claiming status
+router.get('/pumpfun/fees', async (req, res) => {
+  try {
+    const stats = await pumpfunService.getFeeClaimingStats();
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    logger.error('Failed to get Pump.fun fee stats:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Claim creator fees from Pump.fun
+router.post('/pumpfun/claim-fees', async (req, res) => {
+  try {
+    const tokenMintAddress = process.env.TOKEN_MINT_ADDRESS;
+    if (!tokenMintAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token mint address not configured'
+      });
+    }
+
+    const signature = await pumpfunService.claimCreatorFees(tokenMintAddress);
+    
+    logger.info(`Admin claimed creator fees: ${signature}`);
+    
+    res.json({
+      success: true,
+      message: 'Creator fees claimed successfully',
+      data: { transactionSignature: signature }
+    });
+  } catch (error) {
+    logger.error('Failed to claim creator fees:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Claim fees and auto-send to winner
+router.post('/pumpfun/claim-and-send', async (req, res) => {
+  try {
+    const { winnerAddress } = req.body;
+    const tokenMintAddress = process.env.TOKEN_MINT_ADDRESS;
+    
+    if (!tokenMintAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token mint address not configured'
+      });
+    }
+
+    if (!winnerAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'Winner address is required'
+      });
+    }
+
+    const result = await pumpfunService.claimAndSendToWinner(tokenMintAddress, winnerAddress);
+    
+    logger.info(`Admin claimed fees and sent to winner: ${winnerAddress}`);
+    
+    res.json({
+      success: true,
+      message: 'Fees claimed and sent to winner successfully',
+      data: result
+    });
+  } catch (error) {
+    logger.error('Failed to claim and send fees:', error);
     res.status(500).json({
       success: false,
       error: error.message
