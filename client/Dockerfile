@@ -18,6 +18,9 @@ ARG REACT_APP_SERVER_URL
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 ENV REACT_APP_SERVER_URL=$REACT_APP_SERVER_URL
 
+# Fix permissions for node_modules binaries
+RUN chmod +x node_modules/.bin/react-scripts
+
 # Build the application
 RUN npm run build
 
