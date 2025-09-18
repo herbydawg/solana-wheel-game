@@ -120,8 +120,7 @@ class PumpFunService {
         const response = await axios.post(url, {
           action: "collectCreatorFee",
           priorityFee: 0.000001,
-          pool: "pump",
-          mint: tokenMintAddress
+          pool: "pump"
         });
 
         if (response.data && response.data.signature) {
