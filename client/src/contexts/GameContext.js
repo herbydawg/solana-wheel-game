@@ -297,6 +297,8 @@ export const GameProvider = ({ children }) => {
 
   // Initialize data on mount
   useEffect(() => {
+    console.log('API_BASE URL:', API_BASE); // Debug log
+
     // Always try to fetch data, even if not connected initially
     fetchGameState();
     fetchWheelData();
@@ -308,8 +310,15 @@ export const GameProvider = ({ children }) => {
       fetchSolPrice();
     }, 60000);
 
+    // Force loading to complete after 10 seconds as fallback
+    const loadingTimeout = setTimeout(() => {
+      console.log('Forcing loading to complete after timeout');
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }, 10000);
+
     return () => {
       clearInterval(priceInterval);
+      clearTimeout(loadingTimeout);
     };
   }, []);
 
