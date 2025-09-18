@@ -108,7 +108,7 @@ const initialState = {
 
 export const GameProvider = ({ children }) => {
   const [state, dispatch] = useReducer(gameReducer, initialState);
-  const { socket, isConnected, gameState, holderStats, countdown } = useSocket();
+  const { socket, isConnected, gameState, holderStats } = useSocket();
 
   // API base URL
   const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -126,11 +126,7 @@ export const GameProvider = ({ children }) => {
     }
   }, [holderStats]);
 
-  useEffect(() => {
-    if (countdown) {
-      dispatch({ type: 'SET_COUNTDOWN', payload: countdown });
-    }
-  }, [countdown]);
+  // Countdown is now handled directly in socket event listeners
 
   // Socket event handlers
   useEffect(() => {
@@ -145,18 +141,32 @@ export const GameProvider = ({ children }) => {
     };
 
     const handlePayoutCompleted = (data) => {
-      // Refresh game state after payout
-      fetchGameState();
+      console.log('Payout completed, transitioning to waiting state');
+      // Smooth transition back to waiting state after payout
+      dispatch({ type: 'SET_SPINNING', payload: false });
+      dispatch({ type: 'SET_WINNER', payload: null });
+      // Game state will be updated via the next countdown socket event
+    };
+
+    const handleCountdown = (data) => {
+      // Ensure smooth transition to waiting state
+      if (data.gameState === 'waiting') {
+        dispatch({ type: 'SET_SPINNING', payload: false });
+        dispatch({ type: 'SET_WINNER', payload: null });
+      }
+      dispatch({ type: 'SET_COUNTDOWN', payload: data });
     };
 
     socket.on('spinStart', handleSpinStart);
     socket.on('winnerSelected', handleWinnerSelected);
     socket.on('payoutCompleted', handlePayoutCompleted);
+    socket.on('countdown', handleCountdown);
 
     return () => {
       socket.off('spinStart', handleSpinStart);
       socket.off('winnerSelected', handleWinnerSelected);
       socket.off('payoutCompleted', handlePayoutCompleted);
+      socket.off('countdown', handleCountdown);
     };
   }, [socket]);
 
