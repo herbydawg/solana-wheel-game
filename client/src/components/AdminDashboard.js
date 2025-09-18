@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import GameConfigPanel from './GameConfigPanel';
 
 const AdminDashboard = () => {
   const [adminPassword, setAdminPassword] = useState('');
@@ -162,6 +163,12 @@ const AdminDashboard = () => {
             <div className="text-white font-bold">Resume Game</div>
             <div className="text-gray-400 text-sm">Restart game operations</div>
           </button>
+        </div>
+
+        {/* Game Configuration */}
+        <div className="glass-strong p-6 rounded-2xl mb-8">
+          <h3 className="text-xl font-bold text-white mb-4">🎮 Game Configuration</h3>
+          <GameConfigPanel adminPassword={adminPassword} />
         </div>
 
         {/* System Status */}

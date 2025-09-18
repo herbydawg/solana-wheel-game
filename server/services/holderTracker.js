@@ -314,8 +314,36 @@ class HolderTracker {
       '9KJRLL6VHRo5Yvh9LHs4FciL4McCXZBQzgWDNg3aKXDY', // Current token bonding curve
     ];
 
+    // Check blacklisted addresses from environment
+    const blacklistedAddresses = process.env.BLACKLISTED_ADDRESSES ?
+      process.env.BLACKLISTED_ADDRESSES.split(',').map(addr => addr.trim()) : [];
+
     return burnAddresses.includes(address) ||
+            blacklistedAddresses.includes(address) ||
             address.startsWith('1111111111111111111111111111111');
+  }
+
+  async updateTokenAddress(newTokenAddress) {
+    try {
+      logger.info(`Updating token address to: ${newTokenAddress}`);
+      
+      // Clear existing data
+      this.holders.clear();
+      this.eligibleHolders.clear();
+      this.totalSupply = 0;
+      this.minimumHoldAmount = 0;
+      
+      // Update token supply with new address
+      await this.updateTokenSupply();
+      
+      // Perform new holder scan
+      await this.scanHolders();
+      
+      logger.info('Token address updated successfully');
+    } catch (error) {
+      logger.error('Failed to update token address:', error);
+      throw error;
+    }
   }
 
   getEligibleHolders() {

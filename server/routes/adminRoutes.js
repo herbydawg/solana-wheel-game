@@ -225,49 +225,130 @@ router.get('/logs', async (req, res) => {
   }
 });
 
+// Get current configuration
+router.get('/config', async (req, res) => {
+  try {
+    const config = {
+      tokenMintAddress: process.env.TOKEN_MINT_ADDRESS || '',
+      feeCollectionWallet: process.env.FEE_COLLECTION_WALLET || '',
+      creatorWallet: process.env.CREATOR_WALLET || '',
+      minimumHoldPercentage: parseFloat(process.env.MINIMUM_HOLD_PERCENTAGE) || 0.01,
+      spinIntervalMinutes: parseInt(process.env.SPIN_INTERVAL_MINUTES) || 5,
+      winnerPayoutPercentage: parseInt(process.env.WINNER_PAYOUT_PERCENTAGE) || 100,
+      creatorPayoutPercentage: parseInt(process.env.CREATOR_PAYOUT_PERCENTAGE) || 0,
+      blacklistedAddresses: process.env.BLACKLISTED_ADDRESSES ?
+        process.env.BLACKLISTED_ADDRESSES.split(',').map(addr => addr.trim()) : []
+    };
+    
+    res.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
+    logger.error('Failed to get configuration:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get configuration'
+    });
+  }
+});
+
 // Update configuration
 router.post('/config', async (req, res) => {
   try {
-    const { spinInterval, minHoldPercentage, winnerPercentage, creatorPercentage } = req.body;
+    const {
+      tokenMintAddress,
+      feeCollectionWallet,
+      creatorWallet,
+      minimumHoldPercentage,
+      spinIntervalMinutes,
+      winnerPayoutPercentage,
+      creatorPayoutPercentage,
+      blacklistedAddresses
+    } = req.body;
     
     // Validate configuration
-    if (spinInterval && (spinInterval < 1 || spinInterval > 60)) {
+    if (spinIntervalMinutes && (spinIntervalMinutes < 1 || spinIntervalMinutes > 60)) {
       return res.status(400).json({
         success: false,
         error: 'Spin interval must be between 1 and 60 minutes'
       });
     }
     
-    if (minHoldPercentage && (minHoldPercentage < 0.01 || minHoldPercentage > 10)) {
+    if (minimumHoldPercentage && (minimumHoldPercentage < 0.01 || minimumHoldPercentage > 10)) {
       return res.status(400).json({
         success: false,
         error: 'Minimum hold percentage must be between 0.01% and 10%'
       });
     }
     
-    if (winnerPercentage && creatorPercentage && (winnerPercentage + creatorPercentage !== 100)) {
+    if (winnerPayoutPercentage && creatorPayoutPercentage && (winnerPayoutPercentage + creatorPayoutPercentage !== 100)) {
       return res.status(400).json({
         success: false,
         error: 'Winner and creator percentages must sum to 100%'
       });
     }
+
+    // Validate Solana addresses
+    const validateSolanaAddress = (address) => {
+      return address && address.length >= 32 && address.length <= 44;
+    };
+
+    if (tokenMintAddress && !validateSolanaAddress(tokenMintAddress)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid token mint address format'
+      });
+    }
+
+    if (feeCollectionWallet && !validateSolanaAddress(feeCollectionWallet)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid fee collection wallet address format'
+      });
+    }
+
+    if (creatorWallet && !validateSolanaAddress(creatorWallet)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid creator wallet address format'
+      });
+    }
     
     // Update environment variables (in production, this would update a config service)
-    if (spinInterval) process.env.SPIN_INTERVAL_MINUTES = spinInterval.toString();
-    if (minHoldPercentage) process.env.MINIMUM_HOLD_PERCENTAGE = minHoldPercentage.toString();
-    if (winnerPercentage) process.env.WINNER_PAYOUT_PERCENTAGE = winnerPercentage.toString();
-    if (creatorPercentage) process.env.CREATOR_PAYOUT_PERCENTAGE = creatorPercentage.toString();
+    if (tokenMintAddress) process.env.TOKEN_MINT_ADDRESS = tokenMintAddress;
+    if (feeCollectionWallet) process.env.FEE_COLLECTION_WALLET = feeCollectionWallet;
+    if (creatorWallet) process.env.CREATOR_WALLET = creatorWallet;
+    if (spinIntervalMinutes) process.env.SPIN_INTERVAL_MINUTES = spinIntervalMinutes.toString();
+    if (minimumHoldPercentage) process.env.MINIMUM_HOLD_PERCENTAGE = minimumHoldPercentage.toString();
+    if (winnerPayoutPercentage) process.env.WINNER_PAYOUT_PERCENTAGE = winnerPayoutPercentage.toString();
+    if (creatorPayoutPercentage) process.env.CREATOR_PAYOUT_PERCENTAGE = creatorPayoutPercentage.toString();
+    if (blacklistedAddresses) process.env.BLACKLISTED_ADDRESSES = blacklistedAddresses.join(',');
     
     logger.info('Admin updated configuration:', req.body);
+    
+    // Restart holder tracking with new token if changed
+    if (tokenMintAddress) {
+      try {
+        await holderTracker.updateTokenAddress(tokenMintAddress);
+        logger.info('Holder tracker updated with new token address');
+      } catch (error) {
+        logger.warn('Failed to update holder tracker:', error.message);
+      }
+    }
     
     res.json({
       success: true,
       message: 'Configuration updated successfully',
       data: {
-        spinInterval: process.env.SPIN_INTERVAL_MINUTES,
-        minHoldPercentage: process.env.MINIMUM_HOLD_PERCENTAGE,
-        winnerPercentage: process.env.WINNER_PAYOUT_PERCENTAGE,
-        creatorPercentage: process.env.CREATOR_PAYOUT_PERCENTAGE
+        tokenMintAddress: process.env.TOKEN_MINT_ADDRESS,
+        feeCollectionWallet: process.env.FEE_COLLECTION_WALLET,
+        creatorWallet: process.env.CREATOR_WALLET,
+        minimumHoldPercentage: process.env.MINIMUM_HOLD_PERCENTAGE,
+        spinIntervalMinutes: process.env.SPIN_INTERVAL_MINUTES,
+        winnerPayoutPercentage: process.env.WINNER_PAYOUT_PERCENTAGE,
+        creatorPayoutPercentage: process.env.CREATOR_PAYOUT_PERCENTAGE,
+        blacklistedAddresses: process.env.BLACKLISTED_ADDRESSES
       }
     });
   } catch (error) {
