@@ -4,6 +4,7 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 require('dotenv').config();
 
 const logger = require('./utils/logger');
@@ -51,12 +52,22 @@ app.use('/api/admin', require('./routes/adminRoutes'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.json({
+    status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
 });
+
+// Serve static files from React build directory in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/build')));
+
+  // Catch all handler: send back React's index.html file for client-side routing
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/build/index.html'));
+  });
+}
 
 // WebSocket connection handling
 io.on('connection', (socket) => {
