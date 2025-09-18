@@ -3,14 +3,14 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copy root package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Copy client directory
+COPY client/ ./client/
 
-# Copy source code
-COPY . .
+# Install dependencies for both root and client
+RUN npm ci && cd client && npm ci && cd ..
 
 # Set environment variables for build
 ARG REACT_APP_API_URL
@@ -19,7 +19,7 @@ ENV REACT_APP_API_URL=$REACT_APP_API_URL
 ENV REACT_APP_SERVER_URL=$REACT_APP_SERVER_URL
 ENV NODE_ENV=production
 
-# Build the application
+# Build the client application
 RUN npm run build
 
 # Expose port
