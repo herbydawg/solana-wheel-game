@@ -7,7 +7,7 @@ const solanaService = require('./solanaService');
 class PumpFunService {
   constructor() {
     this.connection = null;
-    this.pumpfunApiUrl = 'https://frontend-api.pump.fun';
+    this.pumpfunApiUrl = 'https://pumpportal.fun/api';
     this.isInitialized = false;
   }
 
@@ -114,13 +114,22 @@ class PumpFunService {
 
       // First, try using Pump.fun API to claim fees
       try {
-        const response = await axios.post(`${this.pumpfunApiUrl}/coins/${tokenMintAddress}/claim`, {
-          creator: process.env.CREATOR_WALLET
+        const apiKey = process.env.PUMPFUN_API_KEY;
+        const url = apiKey ? `${this.pumpfunApiUrl}/trade?api-key=${apiKey}` : `${this.pumpfunApiUrl}/trade`;
+
+        const response = await axios.post(url, {
+          action: "collectCreatorFee",
+          priorityFee: 0.000001,
+          pool: "pump",
+          mint: tokenMintAddress
         });
 
-        if (response.data && (response.data.success || response.data.signature)) {
-          logger.info(`Creator fees claimed via Pump.fun API: ${response.data.signature || response.data.txHash || 'success'}`);
-          return response.data.signature || response.data.txHash || `pumpfun_claim_${Date.now()}`;
+        if (response.data && response.data.signature) {
+          logger.info(`Creator fees claimed via Pump.fun API: ${response.data.signature}`);
+          return response.data.signature;
+        } else if (response.data && response.data.tx) {
+          logger.info(`Creator fees claimed via Pump.fun API: ${response.data.tx}`);
+          return response.data.tx;
         }
       } catch (apiError) {
         logger.warn('Pump.fun API claim failed, checking response:', apiError.response?.data || apiError.message);
