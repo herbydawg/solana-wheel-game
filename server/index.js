@@ -12,6 +12,7 @@ const solanaService = require('./services/solanaService');
 const gameEngine = require('./services/gameEngine');
 const holderTracker = require('./services/holderTracker');
 const payoutService = require('./services/payoutService');
+const pumpfunService = require('./services/pumpfunService');
 
 const app = express();
 const server = http.createServer(app);
@@ -113,6 +114,14 @@ async function initializeServices() {
       logger.info('Solana service initialized successfully');
     } catch (error) {
       logger.warn('Solana service failed to initialize, continuing with limited functionality:', error.message);
+    }
+
+    // Initialize Pump.fun service
+    try {
+      await pumpfunService.initialize();
+      logger.info('Pump.fun service initialized successfully');
+    } catch (error) {
+      logger.warn('Pump.fun service failed to initialize:', error.message);
     }
     
     // Initialize holder tracking (will use demo data if Solana fails)

@@ -7,7 +7,7 @@ const solanaService = require('./solanaService');
 class PumpFunService {
   constructor() {
     this.connection = null;
-    this.pumpfunApiUrl = 'https://pumpportal.fun/api';
+    this.pumpfunApiUrl = 'https://frontend-api.pump.fun';
     this.isInitialized = false;
   }
 
@@ -29,21 +29,26 @@ class PumpFunService {
    */
   async getCreatorFees(tokenMintAddress) {
     try {
-      const response = await axios.get(`${this.pumpfunApiUrl}/fees/${tokenMintAddress}`);
-      
-      if (response.data && response.data.success) {
+      const response = await axios.get(`${this.pumpfunApiUrl}/coins/${tokenMintAddress}`);
+
+      if (response.data && response.data.creator) {
+        // Extract fee information from coin data
+        const coinData = response.data;
+        const creatorFees = coinData.creatorFees || 0;
+        const lastClaimed = coinData.lastFeeClaim || null;
+
         return {
-          totalFees: response.data.totalFees || 0,
-          claimableFees: response.data.claimableFees || 0,
-          lastClaimed: response.data.lastClaimed,
-          creatorWallet: response.data.creatorWallet
+          totalFees: creatorFees,
+          claimableFees: creatorFees,
+          lastClaimed: lastClaimed,
+          creatorWallet: coinData.creator
         };
       }
-      
+
       throw new Error('Invalid response from Pump.fun API');
     } catch (error) {
       logger.error('Failed to get creator fees:', error);
-      
+
       // Fallback: Check creator wallet balance directly
       return await this.getCreatorWalletBalance(tokenMintAddress);
     }
@@ -107,14 +112,13 @@ class PumpFunService {
 
       // First, try using Pump.fun API to claim fees
       try {
-        const response = await axios.post(`${this.pumpfunApiUrl}/claim-fees`, {
-          tokenMint: tokenMintAddress,
+        const response = await axios.post(`${this.pumpfunApiUrl}/coins/${tokenMintAddress}/claim`, {
           creatorWallet: process.env.CREATOR_WALLET
         });
 
-        if (response.data && response.data.signature) {
-          logger.info(`Creator fees claimed via Pump.fun API: ${response.data.signature}`);
-          return response.data.signature;
+        if (response.data && response.data.success) {
+          logger.info(`Creator fees claimed via Pump.fun API: ${response.data.txHash || 'success'}`);
+          return response.data.txHash || `pumpfun_claim_${Date.now()}`;
         }
       } catch (apiError) {
         logger.warn('Pump.fun API claim failed, trying direct method:', apiError.message);
@@ -122,7 +126,7 @@ class PumpFunService {
 
       // Fallback: Direct wallet interaction
       return await this.claimFeesDirectly(tokenMintAddress);
-      
+
     } catch (error) {
       logger.error('Failed to claim creator fees:', error);
       throw error;
